@@ -170,6 +170,10 @@ export default function App() {
                     <AccelerometerGraph history={history} />
                   </View>
                 )}
+
+                {history.length >= 2 && !isActive && (
+                  <RideAnalysis history={history} />
+                )}
               </>
             )}
           </View>
@@ -245,6 +249,122 @@ function AccelerometerGraph({ history }: { history: { x: number; y: number; z: n
         <LegendItem label="Y" color="#34c759" />
         <LegendItem label="Z" color="#007aff" />
       </View>
+    </View>
+  );
+}
+
+type HistoryPoint = { x: number; y: number; z: number };
+
+function analyzeRide(history: HistoryPoint[]) {
+  const magnitudes = history.map((h) => Math.sqrt(h.x ** 2 + h.y ** 2 + h.z ** 2));
+
+  // RMS acceleration — overall vibration intensity
+  const rms = Math.sqrt(magnitudes.reduce((sum, m) => sum + m * m, 0) / magnitudes.length);
+
+  // Peak acceleration
+  const peak = Math.max(...magnitudes);
+
+  // Jerk: rate of change of acceleration between consecutive samples
+  const jerks: number[] = [];
+  for (let i = 1; i < magnitudes.length; i++) {
+    jerks.push(Math.abs(magnitudes[i] - magnitudes[i - 1]));
+  }
+  const jerkRms = jerks.length > 0
+    ? Math.sqrt(jerks.reduce((sum, j) => sum + j * j, 0) / jerks.length)
+    : 0;
+
+  // Jolt count: jerk spikes exceeding 2× the mean jerk
+  const meanJerk = jerks.length > 0 ? jerks.reduce((a, b) => a + b, 0) / jerks.length : 0;
+  const joltThreshold = Math.max(meanJerk * 2, 0.5);
+  const joltCount = jerks.filter((j) => j > joltThreshold).length;
+
+  // Vibration ratio: % of samples above a "comfortable" threshold (0.5 m/s²)
+  const comfortThreshold = 0.5;
+  const vibrationRatio = magnitudes.filter((m) => m > comfortThreshold).length / magnitudes.length;
+
+  // Smoothness score (0–100): penalize high RMS, peak, jerk, and jolts
+  // Tuned so a perfectly still phone ≈ 100 and a very rough ride ≈ 0
+  const rawScore = 100
+    - rms * 10        // penalize sustained vibration
+    - peak * 3        // penalize worst moment
+    - jerkRms * 8     // penalize abrupt changes
+    - joltCount * 2;  // penalize number of jolts
+  const smoothnessScore = Math.max(0, Math.min(100, Math.round(rawScore)));
+
+  return { rms, peak, jerkRms, joltCount, vibrationRatio, smoothnessScore };
+}
+
+function getScoreColor(score: number): string {
+  if (score >= 80) return '#34c759';
+  if (score >= 60) return '#ff9500';
+  if (score >= 40) return '#ff6b00';
+  return '#ff3b30';
+}
+
+function getScoreLabel(score: number): string {
+  if (score >= 80) return 'Smooth';
+  if (score >= 60) return 'Moderate';
+  if (score >= 40) return 'Rough';
+  return 'Very Rough';
+}
+
+function RideAnalysis({ history }: { history: HistoryPoint[] }) {
+  const analysis = useMemo(() => analyzeRide(history), [history]);
+  const scoreColor = getScoreColor(analysis.smoothnessScore);
+
+  return (
+    <View style={styles.analysisContainer}>
+      <Text style={styles.graphTitle}>Ride Analysis</Text>
+
+      <View style={styles.scoreCard}>
+        <Text style={[styles.scoreValue, { color: scoreColor }]}>
+          {analysis.smoothnessScore}
+        </Text>
+        <Text style={[styles.scoreLabel, { color: scoreColor }]}>
+          {getScoreLabel(analysis.smoothnessScore)}
+        </Text>
+        <Text style={styles.scoreSubtitle}>Smoothness Score (0–100)</Text>
+      </View>
+
+      <View style={styles.metricsGrid}>
+        <MetricRow
+          label="RMS Acceleration"
+          value={`${analysis.rms.toFixed(3)} m/s²`}
+          description="Overall vibration intensity"
+        />
+        <MetricRow
+          label="Peak Acceleration"
+          value={`${analysis.peak.toFixed(3)} m/s²`}
+          description="Worst single-moment force"
+        />
+        <MetricRow
+          label="Jerk (RMS)"
+          value={`${analysis.jerkRms.toFixed(3)} m/s³`}
+          description="How abrupt movements are"
+        />
+        <MetricRow
+          label="Jolt Count"
+          value={`${analysis.joltCount}`}
+          description="Sudden acceleration spikes"
+        />
+        <MetricRow
+          label="Vibration Ratio"
+          value={`${(analysis.vibrationRatio * 100).toFixed(1)}%`}
+          description="Time above comfort threshold"
+        />
+      </View>
+    </View>
+  );
+}
+
+function MetricRow({ label, value, description }: { label: string; value: string; description: string }) {
+  return (
+    <View style={styles.metricRow}>
+      <View style={styles.metricInfo}>
+        <Text style={styles.metricLabel}>{label}</Text>
+        <Text style={styles.metricDescription}>{description}</Text>
+      </View>
+      <Text style={styles.metricValue}>{value}</Text>
     </View>
   );
 }
@@ -465,5 +585,66 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#d32f2f',
     textAlign: 'center',
+  },
+  analysisContainer: {
+    marginTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    paddingTop: 24,
+  },
+  scoreCard: {
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 16,
+    paddingVertical: 24,
+    marginBottom: 20,
+  },
+  scoreValue: {
+    fontSize: 64,
+    fontWeight: '800',
+    lineHeight: 72,
+  },
+  scoreLabel: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  scoreSubtitle: {
+    fontSize: 13,
+    color: '#999',
+    marginTop: 6,
+  },
+  metricsGrid: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  metricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  metricInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  metricLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1a1a1a',
+  },
+  metricDescription: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 2,
+  },
+  metricValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#334e68',
   },
 });
