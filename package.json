@@ -8,8 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "predeploy": "npx expo export --platform web && touch dist/.nojekyll",
-    "deploy": "gh-pages -d dist"
+    "predeploy": "npx expo export --platform web",
+    "deploy": "gh-pages -d dist --nojekyll"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
