@@ -32,6 +32,8 @@ export default function App() {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [graphExpanded, setGraphExpanded] = useState(false);
+  const [liveViewExpanded, setLiveViewExpanded] = useState(false);
+  const isNarrow = Dimensions.get('window').width < 500;
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [locationAvailable, setLocationAvailable] = useState(false);
   const locationRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -181,6 +183,11 @@ export default function App() {
     );
   };
 
+  const liveAnalysis = useMemo(
+    () => (history.length >= 2 ? analyzeRide(history) : null),
+    [history],
+  );
+
   if (available === false) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -208,10 +215,28 @@ export default function App() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Live View</Text>
-            <Text style={styles.cardDescription}>
-              Recording on {Platform.OS === 'web' ? 'the Web' : 'Mobile'}.
-            </Text>
+            <Text style={styles.cardTitle}>Ride Score</Text>
+
+            {liveAnalysis ? (
+              <View style={styles.liveScoreContainer}>
+                <Text style={[styles.liveScoreValue, { color: getScoreColor(liveAnalysis.smoothnessScore) }]}>
+                  {liveAnalysis.smoothnessScore}
+                </Text>
+                <Text style={[styles.liveScoreLabel, { color: getScoreColor(liveAnalysis.smoothnessScore) }]}>
+                  {getScoreLabel(liveAnalysis.smoothnessScore)}
+                </Text>
+                <Text style={styles.liveScoreSubtitle}>
+                  {isActive ? 'Recording…' : 'Recording stopped'}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.liveScoreContainer}>
+                <Text style={styles.liveScorePlaceholder}>—</Text>
+                <Text style={styles.liveScoreSubtitle}>
+                  {isActive ? 'Collecting data…' : 'Start recording to see your ride score'}
+                </Text>
+              </View>
+            )}
 
             {locationAvailable && (
               <View style={styles.toggleRow}>
@@ -236,13 +261,7 @@ export default function App() {
               </View>
             )}
 
-            <View style={styles.axisContainer}>
-              <AxisRow label="X" value={data.x} color="#ff3b30" />
-              <AxisRow label="Y" value={data.y} color="#34c759" />
-              <AxisRow label="Z" value={data.z} color="#007aff" />
-            </View>
-
-            <View style={styles.buttonRow}>
+            <View style={[styles.buttonRow, isNarrow && styles.buttonRowVertical]}>
               <TouchableOpacity
                 style={[styles.button, styles.buttonFlex, isActive && styles.activeButton]}
                 onPress={toggle}
@@ -276,6 +295,26 @@ export default function App() {
 
             {history.length >= 2 && !isActive && (
               <RideAnalysis history={history} />
+            )}
+          </View>
+
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.expandableHeader}
+              onPress={() => setLiveViewExpanded((prev) => !prev)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cardTitle}>Live View</Text>
+              <Text style={styles.expandArrow}>{liveViewExpanded ? '▲' : '▼'}</Text>
+            </TouchableOpacity>
+            {liveViewExpanded && (
+              <View style={styles.liveViewContent}>
+                <View style={styles.axisContainer}>
+                  <AxisRow label="X" value={data.x} color="#ff3b30" />
+                  <AxisRow label="Y" value={data.y} color="#34c759" />
+                  <AxisRow label="Z" value={data.z} color="#007aff" />
+                </View>
+              </View>
             )}
           </View>
 
@@ -561,12 +600,6 @@ const styles = StyleSheet.create({
     color: '#1a1a1a',
     marginBottom: 8,
   },
-  cardDescription: {
-    fontSize: 16,
-    color: '#444',
-    marginBottom: 20,
-    lineHeight: 22,
-  },
   axisContainer: {
     marginBottom: 20,
   },
@@ -600,10 +633,42 @@ const styles = StyleSheet.create({
     width: 70,
     textAlign: 'right',
   },
+  liveScoreContainer: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginBottom: 16,
+  },
+  liveScoreValue: {
+    fontSize: 72,
+    fontWeight: '800',
+    lineHeight: 80,
+  },
+  liveScoreLabel: {
+    fontSize: 22,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  liveScoreSubtitle: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 8,
+  },
+  liveScorePlaceholder: {
+    fontSize: 72,
+    fontWeight: '800',
+    color: '#ddd',
+    lineHeight: 80,
+  },
+  liveViewContent: {
+    marginTop: 16,
+  },
   buttonRow: {
     flexDirection: 'row',
     gap: 12,
     marginBottom: 24,
+  },
+  buttonRowVertical: {
+    flexDirection: 'column',
   },
   button: {
     backgroundColor: '#007aff',
