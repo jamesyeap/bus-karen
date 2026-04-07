@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   StyleSheet,
@@ -10,18 +10,32 @@ import {
   ScrollView,
   Dimensions,
   Alert,
+  Switch,
 } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';
 
 const MAX_HISTORY_POINTS = 100;
 
+type DataPoint = {
+  x: number;
+  y: number;
+  z: number;
+  timestamp: string;
+  lat: number | null;
+  lng: number | null;
+};
+
 export default function App() {
   const [data, setData] = useState({ x: 0, y: 0, z: 0 });
-  const [history, setHistory] = useState<{ x: number; y: number; z: number }[]>([]);
+  const [history, setHistory] = useState<DataPoint[]>([]);
   const [isActive, setIsActive] = useState(false);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [graphExpanded, setGraphExpanded] = useState(false);
+  const [locationEnabled, setLocationEnabled] = useState(false);
+  const [locationAvailable, setLocationAvailable] = useState(false);
+  const locationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const watchIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (Platform.OS === 'web') {
@@ -30,10 +44,41 @@ export default function App() {
       } else {
         setAvailable(false);
       }
+      if (navigator.geolocation) {
+        setLocationAvailable(true);
+      }
     } else {
       setAvailable(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!locationEnabled || !locationAvailable) {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      locationRef.current = null;
+      return;
+    }
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        locationRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      },
+      () => {
+        locationRef.current = null;
+      },
+      { enableHighAccuracy: true, maximumAge: 2000 },
+    );
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, [locationEnabled, locationAvailable]);
 
   useEffect(() => {
     if (!isActive || Platform.OS !== 'web') return;
@@ -41,14 +86,21 @@ export default function App() {
     const handleMotion = (event: DeviceMotionEvent) => {
       const acc = event.acceleration;
       if (acc) {
-        const newData = {
-          x: acc.x || 0,
-          y: acc.y || 0,
-          z: acc.z || 0,
+        const x = acc.x || 0;
+        const y = acc.y || 0;
+        const z = acc.z || 0;
+        setData({ x, y, z });
+        const loc = locationRef.current;
+        const point: DataPoint = {
+          x,
+          y,
+          z,
+          timestamp: new Date().toISOString(),
+          lat: loc ? loc.lat : null,
+          lng: loc ? loc.lng : null,
         };
-        setData(newData);
         setHistory((prev) => {
-          const next = [...prev, newData];
+          const next = [...prev, point];
           return next.slice(-MAX_HISTORY_POINTS);
         });
       }
@@ -92,8 +144,13 @@ export default function App() {
 
   const exportCsv = () => {
     if (history.length === 0) return;
-    const header = 'index,x,y,z';
-    const rows = history.map((h, i) => `${i},${h.x},${h.y},${h.z}`);
+    const hasLocation = history.some((h) => h.lat !== null);
+    const header = hasLocation ? 'index,timestamp,x,y,z,lat,lng' : 'index,timestamp,x,y,z';
+    const rows = history.map((h, i) =>
+      hasLocation
+        ? `${i},${h.timestamp},${h.x},${h.y},${h.z},${h.lat ?? ''},${h.lng ?? ''}`
+        : `${i},${h.timestamp},${h.x},${h.y},${h.z}`,
+    );
     const csv = [header, ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -155,6 +212,23 @@ export default function App() {
             <Text style={styles.cardDescription}>
               Recording on {Platform.OS === 'web' ? 'the Web' : 'Mobile'}.
             </Text>
+
+            {locationAvailable && (
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleInfo}>
+                  <Text style={styles.toggleLabel}>📍 Record Location</Text>
+                  <Text style={styles.toggleDescription}>
+                    Include GPS coordinates with each data point
+                  </Text>
+                </View>
+                <Switch
+                  value={locationEnabled}
+                  onValueChange={setLocationEnabled}
+                  trackColor={{ false: '#e0e0e0', true: '#34c759' }}
+                  thumbColor="#fff"
+                />
+              </View>
+            )}
 
             {error && (
               <View style={styles.errorBanner}>
@@ -226,7 +300,7 @@ export default function App() {
   );
 }
 
-function AccelerometerGraph({ history }: { history: { x: number; y: number; z: number }[] }) {
+function AccelerometerGraph({ history }: { history: DataPoint[] }) {
   const width = Dimensions.get('window').width > 800 ? 752 : Dimensions.get('window').width - 80;
   const height = 200;
   const padding = 10;
@@ -294,9 +368,7 @@ function AccelerometerGraph({ history }: { history: { x: number; y: number; z: n
   );
 }
 
-type HistoryPoint = { x: number; y: number; z: number };
-
-function analyzeRide(history: HistoryPoint[]) {
+function analyzeRide(history: DataPoint[]) {
   const magnitudes = history.map((h) => Math.sqrt(h.x ** 2 + h.y ** 2 + h.z ** 2));
 
   // RMS acceleration — overall vibration intensity
@@ -349,7 +421,7 @@ function getScoreLabel(score: number): string {
   return 'Very Rough';
 }
 
-function RideAnalysis({ history }: { history: HistoryPoint[] }) {
+function RideAnalysis({ history }: { history: DataPoint[] }) {
   const analysis = useMemo(() => analyzeRide(history), [history]);
   const scoreColor = getScoreColor(analysis.smoothnessScore);
 
@@ -623,6 +695,29 @@ const styles = StyleSheet.create({
   expandArrow: {
     fontSize: 16,
     color: '#999',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  toggleInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  toggleLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1a1a1a',
+  },
+  toggleDescription: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 2,
   },
   errorBanner: {
     backgroundColor: '#fff3f3',
