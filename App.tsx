@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   Dimensions,
+  Alert,
 } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';
 
@@ -20,6 +21,7 @@ export default function App() {
   const [isActive, setIsActive] = useState(false);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [graphExpanded, setGraphExpanded] = useState(false);
 
   useEffect(() => {
     if (Platform.OS === 'web') {
@@ -102,6 +104,43 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const restart = () => {
+    Alert.alert(
+      'Restart Recording',
+      'This will clear all recorded data and the graph. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear & Restart',
+          style: 'destructive',
+          onPress: () => {
+            setHistory([]);
+            setData({ x: 0, y: 0, z: 0 });
+            setGraphExpanded(false);
+            setIsActive(true);
+          },
+        },
+      ],
+    );
+  };
+
+  if (available === false) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.errorPage}>
+          <Text style={styles.errorPageEmoji}>📵</Text>
+          <Text style={styles.errorPageTitle}>Accelerometer Not Available</Text>
+          <Text style={styles.errorPageText}>
+            {Platform.OS === 'web'
+              ? 'This browser does not support the Device Motion API. Please try opening this page in a mobile browser on a phone or tablet.'
+              : 'Native sensor support is currently disabled. Open this app on the Web to use the native Web API.'}
+          </Text>
+          <StatusBar style="auto" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -113,70 +152,72 @@ export default function App() {
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Live View</Text>
+            <Text style={styles.cardDescription}>
+              Recording on {Platform.OS === 'web' ? 'the Web' : 'Mobile'}.
+            </Text>
 
-            {available === false ? (
-              <View style={styles.unavailableBanner}>
-                <Text style={styles.unavailableEmoji}>📵</Text>
-                <Text style={styles.unavailableTitle}>Accelerometer Not Available</Text>
-                <Text style={styles.unavailableText}>
-                  {Platform.OS === 'web' 
-                    ? 'This browser does not support the Device Motion API. Please try a mobile browser on a phone or tablet.'
-                    : 'Native sensor support is currently disabled. Open this on the Web to use the native Web API.'}
-                </Text>
+            {error && (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorText}>{error}</Text>
               </View>
-            ) : (
-              <>
-                <Text style={styles.cardDescription}>
-                  Recording on {Platform.OS === 'web' ? 'the Web' : 'Mobile'}.
+            )}
+
+            <View style={styles.axisContainer}>
+              <AxisRow label="X" value={data.x} color="#ff3b30" />
+              <AxisRow label="Y" value={data.y} color="#34c759" />
+              <AxisRow label="Z" value={data.z} color="#007aff" />
+            </View>
+
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                style={[styles.button, styles.buttonFlex, isActive && styles.activeButton]}
+                onPress={toggle}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.buttonText}>
+                  {isActive ? 'Stop Recording' : 'Start Recording'}
                 </Text>
+              </TouchableOpacity>
 
-                {error && (
-                  <View style={styles.errorBanner}>
-                    <Text style={styles.errorText}>{error}</Text>
-                  </View>
-                )}
+              {history.length > 0 && (
+                <TouchableOpacity
+                  style={[styles.button, styles.buttonFlex, styles.restartButton]}
+                  onPress={restart}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.buttonText}>Restart</Text>
+                </TouchableOpacity>
+              )}
 
-                <View style={styles.axisContainer}>
-                  <AxisRow label="X" value={data.x} color="#ff3b30" />
-                  <AxisRow label="Y" value={data.y} color="#34c759" />
-                  <AxisRow label="Z" value={data.z} color="#007aff" />
-                </View>
+              {history.length > 0 && (
+                <TouchableOpacity
+                  style={[styles.button, styles.buttonFlex, styles.exportButton]}
+                  onPress={exportCsv}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.buttonText}>Export CSV</Text>
+                </TouchableOpacity>
+              )}
+            </View>
 
-                <View style={styles.buttonRow}>
-                  <TouchableOpacity
-                    style={[styles.button, styles.buttonFlex, isActive && styles.activeButton]}
-                    onPress={toggle}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.buttonText}>
-                      {isActive ? 'Stop Recording' : 'Start Recording'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  {history.length > 0 && (
-                    <TouchableOpacity
-                      style={[styles.button, styles.buttonFlex, styles.exportButton]}
-                      onPress={exportCsv}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.buttonText}>Export CSV</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {history.length > 0 && (
-                  <View style={styles.graphContainer}>
-                    <Text style={styles.graphTitle}>Activity Graph</Text>
-                    <AccelerometerGraph history={history} />
-                  </View>
-                )}
-
-                {history.length >= 2 && !isActive && (
-                  <RideAnalysis history={history} />
-                )}
-              </>
+            {history.length >= 2 && !isActive && (
+              <RideAnalysis history={history} />
             )}
           </View>
+
+          {history.length > 0 && (
+            <View style={styles.card}>
+              <TouchableOpacity
+                style={styles.expandableHeader}
+                onPress={() => setGraphExpanded((prev) => !prev)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.cardTitle}>Activity Graph</Text>
+                <Text style={styles.expandArrow}>{graphExpanded ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+              {graphExpanded && <AccelerometerGraph history={history} />}
+            </View>
+          )}
 
           <StatusBar style="auto" />
         </View>
@@ -504,6 +545,9 @@ const styles = StyleSheet.create({
   activeButton: {
     backgroundColor: '#ff3b30',
   },
+  restartButton: {
+    backgroundColor: '#ff9500',
+  },
   exportButton: {
     backgroundColor: '#34c759',
   },
@@ -511,12 +555,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
-  },
-  graphContainer: {
-    marginTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    paddingTop: 24,
   },
   graphTitle: {
     fontSize: 18,
@@ -553,27 +591,38 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#666',
   },
-  unavailableBanner: {
+  errorPage: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 24,
-    paddingHorizontal: 16,
+    padding: 32,
   },
-  unavailableEmoji: {
-    fontSize: 48,
-    marginBottom: 12,
+  errorPageEmoji: {
+    fontSize: 72,
+    marginBottom: 20,
   },
-  unavailableTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+  errorPageTitle: {
+    fontSize: 26,
+    fontWeight: '800',
     color: '#1a1a1a',
-    marginBottom: 8,
+    marginBottom: 12,
     textAlign: 'center',
   },
-  unavailableText: {
-    fontSize: 15,
+  errorPageText: {
+    fontSize: 16,
     color: '#666',
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 24,
+    maxWidth: 400,
+  },
+  expandableHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  expandArrow: {
+    fontSize: 16,
+    color: '#999',
   },
   errorBanner: {
     backgroundColor: '#fff3f3',
