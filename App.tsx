@@ -85,10 +85,21 @@ export default function App() {
       }
     }
     
-    if (isActive) {
-      setHistory([]);
-    }
     setIsActive((prev) => !prev);
+  };
+
+  const exportCsv = () => {
+    if (history.length === 0) return;
+    const header = 'index,x,y,z';
+    const rows = history.map((h, i) => `${i},${h.x},${h.y},${h.z}`);
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'accelerometer_data.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -131,15 +142,27 @@ export default function App() {
                   <AxisRow label="Z" value={data.z} color="#007aff" />
                 </View>
 
-                <TouchableOpacity
-                  style={[styles.button, isActive && styles.activeButton]}
-                  onPress={toggle}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.buttonText}>
-                    {isActive ? 'Stop & Reset' : 'Start Recording'}
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity
+                    style={[styles.button, styles.buttonFlex, isActive && styles.activeButton]}
+                    onPress={toggle}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.buttonText}>
+                      {isActive ? 'Stop Recording' : 'Start Recording'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {history.length > 0 && (
+                    <TouchableOpacity
+                      style={[styles.button, styles.buttonFlex, styles.exportButton]}
+                      onPress={exportCsv}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.buttonText}>Export CSV</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
 
                 {history.length > 0 && (
                   <View style={styles.graphContainer}>
@@ -163,10 +186,25 @@ function AccelerometerGraph({ history }: { history: { x: number; y: number; z: n
   const height = 200;
   const padding = 10;
   
-  // Normalized range: let's assume -10 to 10 m/s^2 for a good visual
+  const { minVal, maxVal } = useMemo(() => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const h of history) {
+      if (h.x < min) min = h.x;
+      if (h.y < min) min = h.y;
+      if (h.z < min) min = h.z;
+      if (h.x > max) max = h.x;
+      if (h.y > max) max = h.y;
+      if (h.z > max) max = h.z;
+    }
+    if (!isFinite(min)) min = -5;
+    if (!isFinite(max)) max = 5;
+    if (min === max) { min -= 1; max += 1; }
+    const margin = (max - min) * 0.1;
+    return { minVal: min - margin, maxVal: max + margin };
+  }, [history]);
+
   const scale = (val: number) => {
-    const minVal = -5;
-    const maxVal = 5;
     const normalized = (val - minVal) / (maxVal - minVal);
     return height - (normalized * (height - 2 * padding) + padding);
   };
@@ -329,15 +367,25 @@ const styles = StyleSheet.create({
     width: 70,
     textAlign: 'right',
   },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
   button: {
     backgroundColor: '#007aff',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 24,
+  },
+  buttonFlex: {
+    flex: 1,
   },
   activeButton: {
     backgroundColor: '#ff3b30',
+  },
+  exportButton: {
+    backgroundColor: '#34c759',
   },
   buttonText: {
     color: '#fff',
