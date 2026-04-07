@@ -47,8 +47,8 @@ export default function App() {
     let subscription: ReturnType<typeof Accelerometer.addListener>;
     try {
       subscription = Accelerometer.addListener(setData);
-    } catch {
-      setError('Failed to start accelerometer. This device may not have a motion sensor.');
+    } catch (e) {
+      setError(`Failed to start accelerometer: ${e instanceof Error ? e.message : String(e)}`);
       setIsActive(false);
       return;
     }
@@ -67,8 +67,15 @@ export default function App() {
             setError('Permission to access motion sensors was denied. Please allow access in your browser settings.');
             return;
           }
+          
+          // Re-check availability after permission is granted
+          const isNowAvailable = await Accelerometer.isAvailableAsync();
+          if (!isNowAvailable) {
+            setError('Accelerometer is still reported as unavailable even after granting permission.');
+            // We don't return here because some browsers lie about isAvailableAsync
+          }
         } catch (e) {
-          setError('Failed to request motion sensor permission.');
+          setError(`Failed to request motion sensor permission: ${e instanceof Error ? e.message : String(e)}`);
           console.error(e);
           return;
         }
