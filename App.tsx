@@ -9,9 +9,6 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { Accelerometer } from 'expo-sensors';
-
-const UPDATE_INTERVAL_MS = 100;
 
 export default function App() {
   const [data, setData] = useState({ x: 0, y: 0, z: 0 });
@@ -20,59 +17,61 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Accelerometer.isAvailableAsync().then((isAvailable) => {
-      // On some web browsers (like iOS Safari), isAvailableAsync might return false 
-      // if permission hasn't been granted yet.
-      if (Platform.OS === 'web') {
-        setAvailable(true);
-      } else {
-        setAvailable(isAvailable);
-      }
-    }).catch(() => {
-      if (Platform.OS === 'web') {
+    if (Platform.OS === 'web') {
+      // Check if the DeviceMotionEvent API is supported by the browser
+      if (window.DeviceMotionEvent) {
         setAvailable(true);
       } else {
         setAvailable(false);
       }
-    });
+    } else {
+      // For native, we are no longer using expo-sensors in this implementation
+      setAvailable(false);
+    }
   }, []);
 
   useEffect(() => {
-    Accelerometer.setUpdateInterval(UPDATE_INTERVAL_MS);
-  }, []);
+    if (!isActive || Platform.OS !== 'web') return;
 
-  useEffect(() => {
-    if (!isActive) return;
+    const handleMotion = (event: DeviceMotionEvent) => {
+      // We use acceleration (excluding gravity) as requested.
+      // Note: On some devices, acceleration might be null if gravity cannot be separated.
+      // accelerationIncludingGravity is an alternative if this happens.
+      const acc = event.acceleration;
+      if (acc) {
+        setData({
+          x: acc.x || 0,
+          y: acc.y || 0,
+          z: acc.z || 0,
+        });
+      }
+    };
 
-    let subscription: ReturnType<typeof Accelerometer.addListener>;
     try {
-      subscription = Accelerometer.addListener(setData);
+      window.addEventListener('devicemotion', handleMotion, true);
     } catch (e) {
       setError(`Failed to start accelerometer: ${e instanceof Error ? e.message : String(e)}`);
       setIsActive(false);
       return;
     }
-    return () => subscription.remove();
+
+    return () => {
+      window.removeEventListener('devicemotion', handleMotion, true);
+    };
   }, [isActive]);
 
   const toggle = async () => {
     setError(null);
     
-    if (!isActive) {
-      // On mobile web, we must first invoke requestPermissionsAsync in a user interaction
-      if (Platform.OS === 'web' && Accelerometer.requestPermissionsAsync) {
+    if (!isActive && Platform.OS === 'web') {
+      // Safari on iOS requires explicit user permission via DeviceMotionEvent.requestPermission()
+      const DeviceMotion = (window as any).DeviceMotionEvent;
+      if (DeviceMotion && typeof DeviceMotion.requestPermission === 'function') {
         try {
-          const { status } = await Accelerometer.requestPermissionsAsync();
+          const status = await DeviceMotion.requestPermission();
           if (status !== 'granted') {
             setError('Permission to access motion sensors was denied. Please allow access in your browser settings.');
             return;
-          }
-          
-          // Re-check availability after permission is granted
-          const isNowAvailable = await Accelerometer.isAvailableAsync();
-          if (!isNowAvailable) {
-            setError('Accelerometer is still reported as unavailable even after granting permission.');
-            // We don't return here because some browsers lie about isAvailableAsync
           }
         } catch (e) {
           setError(`Failed to request motion sensor permission: ${e instanceof Error ? e.message : String(e)}`);
@@ -102,8 +101,9 @@ export default function App() {
                 <Text style={styles.unavailableEmoji}>📵</Text>
                 <Text style={styles.unavailableTitle}>Accelerometer Not Available</Text>
                 <Text style={styles.unavailableText}>
-                  This device does not have a motion sensor. Open this page on a
-                  phone or tablet to see real-time accelerometer data.
+                  {Platform.OS === 'web' 
+                    ? 'This browser does not support the Device Motion API. Please try a mobile browser on a phone or tablet.'
+                    : 'Native sensor support is currently disabled. Open this on the Web to use the native Web API.'}
                 </Text>
               </View>
             ) : (
