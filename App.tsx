@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   StyleSheet,
@@ -8,24 +8,27 @@ import {
   SafeAreaView,
   Platform,
   ScrollView,
+  Dimensions,
 } from 'react-native';
+import Svg, { Polyline } from 'react-native-svg';
+
+const MAX_HISTORY_POINTS = 100;
 
 export default function App() {
   const [data, setData] = useState({ x: 0, y: 0, z: 0 });
+  const [history, setHistory] = useState<{ x: number; y: number; z: number }[]>([]);
   const [isActive, setIsActive] = useState(false);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (Platform.OS === 'web') {
-      // Check if the DeviceMotionEvent API is supported by the browser
       if (window.DeviceMotionEvent) {
         setAvailable(true);
       } else {
         setAvailable(false);
       }
     } else {
-      // For native, we are no longer using expo-sensors in this implementation
       setAvailable(false);
     }
   }, []);
@@ -34,15 +37,17 @@ export default function App() {
     if (!isActive || Platform.OS !== 'web') return;
 
     const handleMotion = (event: DeviceMotionEvent) => {
-      // We use acceleration (excluding gravity) as requested.
-      // Note: On some devices, acceleration might be null if gravity cannot be separated.
-      // accelerationIncludingGravity is an alternative if this happens.
       const acc = event.acceleration;
       if (acc) {
-        setData({
+        const newData = {
           x: acc.x || 0,
           y: acc.y || 0,
           z: acc.z || 0,
+        };
+        setData(newData);
+        setHistory((prev) => {
+          const next = [...prev, newData];
+          return next.slice(-MAX_HISTORY_POINTS);
         });
       }
     };
@@ -64,7 +69,6 @@ export default function App() {
     setError(null);
     
     if (!isActive && Platform.OS === 'web') {
-      // Safari on iOS requires explicit user permission via DeviceMotionEvent.requestPermission()
       const DeviceMotion = (window as any).DeviceMotionEvent;
       if (DeviceMotion && typeof DeviceMotion.requestPermission === 'function') {
         try {
@@ -81,6 +85,9 @@ export default function App() {
       }
     }
     
+    if (isActive) {
+      setHistory([]);
+    }
     setIsActive((prev) => !prev);
   };
 
@@ -94,7 +101,7 @@ export default function App() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Accelerometer</Text>
+            <Text style={styles.cardTitle}>Live View</Text>
 
             {available === false ? (
               <View style={styles.unavailableBanner}>
@@ -109,7 +116,7 @@ export default function App() {
             ) : (
               <>
                 <Text style={styles.cardDescription}>
-                  Running on {Platform.OS === 'web' ? 'the Web' : 'Mobile'}.
+                  Recording on {Platform.OS === 'web' ? 'the Web' : 'Mobile'}.
                 </Text>
 
                 {error && (
@@ -130,9 +137,16 @@ export default function App() {
                   activeOpacity={0.7}
                 >
                   <Text style={styles.buttonText}>
-                    {isActive ? 'Stop' : 'Start'}
+                    {isActive ? 'Stop & Reset' : 'Start Recording'}
                   </Text>
                 </TouchableOpacity>
+
+                {history.length > 0 && (
+                  <View style={styles.graphContainer}>
+                    <Text style={styles.graphTitle}>Activity Graph</Text>
+                    <AccelerometerGraph history={history} />
+                  </View>
+                )}
               </>
             )}
           </View>
@@ -141,6 +155,68 @@ export default function App() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function AccelerometerGraph({ history }: { history: { x: number; y: number; z: number }[] }) {
+  const width = Dimensions.get('window').width > 800 ? 752 : Dimensions.get('window').width - 80;
+  const height = 200;
+  const padding = 10;
+  
+  // Normalized range: let's assume -10 to 10 m/s^2 for a good visual
+  const scale = (val: number) => {
+    const minVal = -5;
+    const maxVal = 5;
+    const normalized = (val - minVal) / (maxVal - minVal);
+    return height - (normalized * (height - 2 * padding) + padding);
+  };
+
+  const xPoints = useMemo(() => 
+    history.map((h, i) => `${(i / (MAX_HISTORY_POINTS - 1)) * width},${scale(h.x)}`).join(' '), 
+    [history, width]
+  );
+  
+  const yPoints = useMemo(() => 
+    history.map((h, i) => `${(i / (MAX_HISTORY_POINTS - 1)) * width},${scale(h.y)}`).join(' '), 
+    [history, width]
+  );
+  
+  const zPoints = useMemo(() => 
+    history.map((h, i) => `${(i / (MAX_HISTORY_POINTS - 1)) * width},${scale(h.z)}`).join(' '), 
+    [history, width]
+  );
+
+  return (
+    <View style={styles.graphWrapper}>
+      <Svg width={width} height={height}>
+        {/* Zero line */}
+        <Polyline
+          points={`0,${scale(0)} ${width},${scale(0)}`}
+          fill="none"
+          stroke="#e0e0e0"
+          strokeWidth="1"
+          strokeDasharray="4"
+        />
+        {/* Data lines */}
+        <Polyline points={xPoints} fill="none" stroke="#ff3b30" strokeWidth="2" />
+        <Polyline points={yPoints} fill="none" stroke="#34c759" strokeWidth="2" />
+        <Polyline points={zPoints} fill="none" stroke="#007aff" strokeWidth="2" />
+      </Svg>
+      <View style={styles.legend}>
+        <LegendItem label="X" color="#ff3b30" />
+        <LegendItem label="Y" color="#34c759" />
+        <LegendItem label="Z" color="#007aff" />
+      </View>
+    </View>
+  );
+}
+
+function LegendItem({ label, color }: { label: string; color: string }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendColor, { backgroundColor: color }]} />
+      <Text style={styles.legendText}>{label}</Text>
+    </View>
   );
 }
 
@@ -153,7 +229,7 @@ function AxisRow({
   value: number;
   color: string;
 }) {
-  const barWidth = Math.min(Math.abs(value) * 100, 100);
+  const barWidth = Math.min(Math.abs(value) * 10, 100);
 
   return (
     <View style={styles.axisRow}>
@@ -258,7 +334,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 24,
   },
   activeButton: {
     backgroundColor: '#ff3b30',
@@ -267,6 +343,47 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  graphContainer: {
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    paddingTop: 24,
+  },
+  graphTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    marginBottom: 16,
+  },
+  graphWrapper: {
+    backgroundColor: '#fcfcfc',
+    borderRadius: 12,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
+    alignItems: 'center',
+  },
+  legend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 12,
+  },
+  legendColor: {
+    width: 12,
+    height: 4,
+    borderRadius: 2,
+    marginRight: 6,
+  },
+  legendText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
   },
   unavailableBanner: {
     alignItems: 'center',
