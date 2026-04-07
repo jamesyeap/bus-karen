@@ -20,7 +20,21 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Accelerometer.isAvailableAsync().then(setAvailable).catch(() => setAvailable(false));
+    Accelerometer.isAvailableAsync().then((isAvailable) => {
+      // On some web browsers (like iOS Safari), isAvailableAsync might return false 
+      // if permission hasn't been granted yet.
+      if (Platform.OS === 'web') {
+        setAvailable(true);
+      } else {
+        setAvailable(isAvailable);
+      }
+    }).catch(() => {
+      if (Platform.OS === 'web') {
+        setAvailable(true);
+      } else {
+        setAvailable(false);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -41,8 +55,26 @@ export default function App() {
     return () => subscription.remove();
   }, [isActive]);
 
-  const toggle = () => {
+  const toggle = async () => {
     setError(null);
+    
+    if (!isActive) {
+      // On mobile web, we must first invoke requestPermissionsAsync in a user interaction
+      if (Platform.OS === 'web' && Accelerometer.requestPermissionsAsync) {
+        try {
+          const { status } = await Accelerometer.requestPermissionsAsync();
+          if (status !== 'granted') {
+            setError('Permission to access motion sensors was denied. Please allow access in your browser settings.');
+            return;
+          }
+        } catch (e) {
+          setError('Failed to request motion sensor permission.');
+          console.error(e);
+          return;
+        }
+      }
+    }
+    
     setIsActive((prev) => !prev);
   };
 

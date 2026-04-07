@@ -40,6 +40,10 @@
 ### Common Surface IDs
 When you open a new browser, the output will provide the `surface_id` (e.g., `surface:3`). Use this ID in subsequent commands to target the correct browser tab.
 
+## Git & Commits
+- **Conventional Commits:** Always use the [Conventional Commits](https://www.conventionalcommits.org/) specification for commit messages (e.g., `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `ci:`).
+- **Style:** Keep commit messages clear, concise, and focused on the "why".
+
 ## Important Constraints for Agents
 1. **Responsive Design:** Use `Platform.OS` or `Dimensions` for platform-specific adjustments.
 2. **Safe Areas:** Always use `SafeAreaView` (from `react-native`) for proper layout on modern mobile devices.
