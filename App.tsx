@@ -16,6 +16,53 @@ import Svg, { Polyline } from 'react-native-svg';
 
 const MAX_HISTORY_POINTS = 100;
 const RECENT_WINDOW_MS = 5000;
+const HIGH_PASS_CUTOFF_HZ = 3;
+
+type HighPassState = {
+  prevRaw: { x: number; y: number; z: number };
+  prevFiltered: { x: number; y: number; z: number };
+  prevTime: number;
+};
+
+function createHighPassState(): HighPassState {
+  return {
+    prevRaw: { x: 0, y: 0, z: 0 },
+    prevFiltered: { x: 0, y: 0, z: 0 },
+    prevTime: 0,
+  };
+}
+
+function applyHighPass(
+  state: HighPassState,
+  raw: { x: number; y: number; z: number },
+  now: number,
+): { filtered: { x: number; y: number; z: number }; next: HighPassState } {
+  if (state.prevTime === 0) {
+    return {
+      filtered: { x: 0, y: 0, z: 0 },
+      next: { prevRaw: raw, prevFiltered: { x: 0, y: 0, z: 0 }, prevTime: now },
+    };
+  }
+
+  const dt = (now - state.prevTime) / 1000;
+  if (dt <= 0 || dt > 1) {
+    return {
+      filtered: { x: 0, y: 0, z: 0 },
+      next: { prevRaw: raw, prevFiltered: { x: 0, y: 0, z: 0 }, prevTime: now },
+    };
+  }
+
+  const rc = 1 / (2 * Math.PI * HIGH_PASS_CUTOFF_HZ);
+  const alpha = rc / (rc + dt);
+
+  const filtered = {
+    x: alpha * (state.prevFiltered.x + raw.x - state.prevRaw.x),
+    y: alpha * (state.prevFiltered.y + raw.y - state.prevRaw.y),
+    z: alpha * (state.prevFiltered.z + raw.z - state.prevRaw.z),
+  };
+
+  return { filtered, next: { prevRaw: raw, prevFiltered: filtered, prevTime: now } };
+}
 
 type DataPoint = {
   x: number;
@@ -127,6 +174,7 @@ export default function App() {
   const overallStatsRef = useRef<RunningStats>(createRunningStats());
   const noDataTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const receivedMotionDataRef = useRef(false);
+  const highPassRef = useRef<HighPassState>(createHighPassState());
 
   useEffect(() => {
     if (Platform.OS === 'web') {
@@ -186,9 +234,21 @@ export default function App() {
       const acc = event.acceleration;
       if (acc && (acc.x !== null || acc.y !== null || acc.z !== null)) {
         receivedMotionDataRef.current = true;
-        const x = acc.x || 0;
-        const y = acc.y || 0;
-        const z = acc.z || 0;
+        const rawX = acc.x || 0;
+        const rawY = acc.y || 0;
+        const rawZ = acc.z || 0;
+
+        const { filtered, next } = applyHighPass(
+          highPassRef.current,
+          { x: rawX, y: rawY, z: rawZ },
+          performance.now(),
+        );
+        highPassRef.current = next;
+
+        const x = filtered.x;
+        const y = filtered.y;
+        const z = filtered.z;
+
         setData({ x, y, z });
         const loc = locationRef.current;
         const point: DataPoint = {
@@ -277,12 +337,14 @@ export default function App() {
           text: 'Clear & Restart',
           style: 'destructive',
           onPress: () => {
+            setIsActive(false);
             setHistory([]);
             setData({ x: 0, y: 0, z: 0 });
             setGraphExpanded(false);
             overallStatsRef.current = createRunningStats();
             setOverallStats(createRunningStats());
-            setIsActive(true);
+            highPassRef.current = createHighPassState();
+            setTimeout(() => setIsActive(true), 0);
           },
         },
       ],
