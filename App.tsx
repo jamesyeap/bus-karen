@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { StatusBar } from 'expo-status-bar';
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { StatusBar } from "expo-status-bar";
 import {
   StyleSheet,
   Text,
@@ -11,8 +11,8 @@ import {
   Dimensions,
   Alert,
   Switch,
-} from 'react-native';
-import Svg, { Polyline } from 'react-native-svg';
+} from "react-native";
+import Svg, { Polyline } from "react-native-svg";
 
 const MAX_HISTORY_POINTS = 100;
 const RECENT_WINDOW_MS = 5000;
@@ -61,7 +61,10 @@ function applyHighPass(
     z: alpha * (state.prevFiltered.z + raw.z - state.prevRaw.z),
   };
 
-  return { filtered, next: { prevRaw: raw, prevFiltered: filtered, prevTime: now } };
+  return {
+    filtered,
+    next: { prevRaw: raw, prevFiltered: filtered, prevTime: now },
+  };
 }
 
 type DataPoint = {
@@ -99,7 +102,10 @@ function createRunningStats(): RunningStats {
   };
 }
 
-function pushToRunningStats(stats: RunningStats, point: DataPoint): RunningStats {
+function pushToRunningStats(
+  stats: RunningStats,
+  point: DataPoint,
+): RunningStats {
   const mag = Math.sqrt(point.x ** 2 + point.y ** 2 + point.z ** 2);
   const comfortThreshold = 0.5;
 
@@ -111,7 +117,8 @@ function pushToRunningStats(stats: RunningStats, point: DataPoint): RunningStats
     jerkCount: stats.jerkCount,
     joltCount: stats.joltCount,
     jerkSum: stats.jerkSum,
-    aboveComfortCount: stats.aboveComfortCount + (mag > comfortThreshold ? 1 : 0),
+    aboveComfortCount:
+      stats.aboveComfortCount + (mag > comfortThreshold ? 1 : 0),
     lastMagnitude: mag,
   };
 
@@ -135,16 +142,12 @@ function scoreFromStats(stats: RunningStats) {
   if (stats.count < 2) return null;
 
   const rms = Math.sqrt(stats.sumMagSq / stats.count);
-  const jerkRms = stats.jerkCount > 0
-    ? Math.sqrt(stats.sumJerkSq / stats.jerkCount)
-    : 0;
+  const jerkRms =
+    stats.jerkCount > 0 ? Math.sqrt(stats.sumJerkSq / stats.jerkCount) : 0;
   const vibrationRatio = stats.aboveComfortCount / stats.count;
 
-  const rawScore = 100
-    - rms * 10
-    - stats.peak * 3
-    - jerkRms * 8
-    - stats.joltCount * 2;
+  const rawScore =
+    100 - rms * 10 - stats.peak * 3 - jerkRms * 8 - stats.joltCount * 2;
   const smoothnessScore = Math.max(0, Math.min(100, Math.round(rawScore)));
 
   return {
@@ -165,12 +168,13 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [graphExpanded, setGraphExpanded] = useState(false);
   const [liveViewExpanded, setLiveViewExpanded] = useState(false);
-  const isNarrow = Dimensions.get('window').width < 500;
+  const isNarrow = Dimensions.get("window").width < 500;
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [locationAvailable, setLocationAvailable] = useState(false);
   const locationRef = useRef<{ lat: number; lng: number } | null>(null);
   const watchIdRef = useRef<number | null>(null);
-  const [overallStats, setOverallStats] = useState<RunningStats>(createRunningStats());
+  const [overallStats, setOverallStats] =
+    useState<RunningStats>(createRunningStats());
   const overallStatsRef = useRef<RunningStats>(createRunningStats());
   const noDataTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const receivedMotionDataRef = useRef(false);
@@ -178,7 +182,7 @@ export default function App() {
   const generationRef = useRef(0);
 
   useEffect(() => {
-    if (Platform.OS === 'web') {
+    if (Platform.OS === "web") {
       if (window.DeviceMotionEvent) {
         setAvailable(true);
       } else {
@@ -204,7 +208,10 @@ export default function App() {
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        locationRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        locationRef.current = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        };
       },
       () => {
         locationRef.current = null;
@@ -221,7 +228,7 @@ export default function App() {
   }, [locationEnabled, locationAvailable]);
 
   useEffect(() => {
-    if (!isActive || Platform.OS !== 'web') return;
+    if (!isActive || Platform.OS !== "web") return;
 
     receivedMotionDataRef.current = false;
     const gen = ++generationRef.current;
@@ -266,21 +273,26 @@ export default function App() {
           const next = [...prev, point];
           return next.slice(-MAX_HISTORY_POINTS);
         });
-        overallStatsRef.current = pushToRunningStats(overallStatsRef.current, point);
+        overallStatsRef.current = pushToRunningStats(
+          overallStatsRef.current,
+          point,
+        );
         setOverallStats(overallStatsRef.current);
       }
     };
 
     try {
-      window.addEventListener('devicemotion', handleMotion, true);
+      window.addEventListener("devicemotion", handleMotion, true);
     } catch (e) {
-      setError(`Failed to start accelerometer: ${e instanceof Error ? e.message : String(e)}`);
+      setError(
+        `Failed to start accelerometer: ${e instanceof Error ? e.message : String(e)}`,
+      );
       setIsActive(false);
       return;
     }
 
     return () => {
-      window.removeEventListener('devicemotion', handleMotion, true);
+      window.removeEventListener("devicemotion", handleMotion, true);
       if (noDataTimerRef.current) {
         clearTimeout(noDataTimerRef.current);
         noDataTimerRef.current = null;
@@ -290,55 +302,64 @@ export default function App() {
 
   const toggle = async () => {
     setError(null);
-    
-    if (!isActive && Platform.OS === 'web') {
+
+    if (!isActive && Platform.OS === "web") {
       const DeviceMotion = (window as any).DeviceMotionEvent;
-      if (DeviceMotion && typeof DeviceMotion.requestPermission === 'function') {
+      if (
+        DeviceMotion &&
+        typeof DeviceMotion.requestPermission === "function"
+      ) {
         try {
           const status = await DeviceMotion.requestPermission();
-          if (status !== 'granted') {
-            setError('Permission to access motion sensors was denied. Please allow access in your browser settings.');
+          if (status !== "granted") {
+            setError(
+              "Permission to access motion sensors was denied. Please allow access in your browser settings.",
+            );
             return;
           }
         } catch (e) {
-          setError(`Failed to request motion sensor permission: ${e instanceof Error ? e.message : String(e)}`);
+          setError(
+            `Failed to request motion sensor permission: ${e instanceof Error ? e.message : String(e)}`,
+          );
           console.error(e);
           return;
         }
       }
     }
-    
+
     setIsActive((prev) => !prev);
   };
 
   const exportCsv = () => {
     if (history.length === 0) return;
     const hasLocation = history.some((h) => h.lat !== null);
-    const header = hasLocation ? 'index,timestamp,x,y,z,lat,lng' : 'index,timestamp,x,y,z';
+    const header = hasLocation
+      ? "index,timestamp,x,y,z,lat,lng"
+      : "index,timestamp,x,y,z";
     const rows = history.map((h, i) =>
       hasLocation
-        ? `${i},${h.timestamp},${h.x},${h.y},${h.z},${h.lat ?? ''},${h.lng ?? ''}`
+        ? `${i},${h.timestamp},${h.x},${h.y},${h.z},${h.lat ?? ""},${h.lng ?? ""}`
         : `${i},${h.timestamp},${h.x},${h.y},${h.z}`,
     );
-    const csv = [header, ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'accelerometer_data.csv';
+    a.download = "accelerometer_data.csv";
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const restart = () => {
     Alert.alert(
-      'Restart Recording',
-      'This will clear all recorded data and the graph. Are you sure?',
+      "Restart Recording",
+      "This will clear all recorded data and the graph. Are you sure?",
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: "Cancel", style: "cancel" },
         {
-          text: 'Clear & Restart',
-          style: 'destructive',
+          text: "Clear & Restart",
+          style: "destructive",
           onPress: () => {
             generationRef.current++;
             setIsActive(false);
@@ -361,7 +382,9 @@ export default function App() {
     const recentPoints = history.filter(
       (h) => now - new Date(h.timestamp).getTime() <= RECENT_WINDOW_MS,
     );
-    return recentPoints.length >= 2 ? analyzeRide(recentPoints) : analyzeRide(history);
+    return recentPoints.length >= 2
+      ? analyzeRide(recentPoints)
+      : analyzeRide(history);
   }, [history, isActive]);
 
   const overallAnalysis = useMemo(
@@ -376,9 +399,9 @@ export default function App() {
           <Text style={styles.errorPageEmoji}>📵</Text>
           <Text style={styles.errorPageTitle}>Accelerometer Not Available</Text>
           <Text style={styles.errorPageText}>
-            {Platform.OS === 'web'
-              ? 'No accelerometer was detected on this device. This app requires a motion sensor to measure ride quality. Please open this page on a phone or tablet with an accelerometer.'
-              : 'Native sensor support is currently disabled. Open this app on the Web to use the native Web API.'}
+            {Platform.OS === "web"
+              ? "No accelerometer was detected on this device. This app requires a motion sensor to measure ride quality. Please open this page on a phone or tablet with an accelerometer."
+              : "Native sensor support is currently disabled. Open this app on the Web to use the native Web API."}
           </Text>
           <StatusBar style="auto" />
         </View>
@@ -391,21 +414,31 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.container}>
           <View style={styles.header}>
-            <Text style={styles.title}>Buskaren</Text>
-            <Text style={styles.subtitle}>Real-time Accelerometer Data</Text>
+            <Text style={styles.title}>Bus Karen</Text>
+            <Text style={styles.subtitle}>"Why my ride so shakeh?!"</Text>
           </View>
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>
-              {isActive ? 'Current Ride Score' : 'Overall Ride Score'}
+              {isActive ? "Current Ride Score" : "Overall Ride Score"}
             </Text>
 
             {isActive && liveAnalysis ? (
               <View style={styles.liveScoreContainer}>
-                <Text style={[styles.liveScoreValue, { color: getScoreColor(liveAnalysis.smoothnessScore) }]}>
+                <Text
+                  style={[
+                    styles.liveScoreValue,
+                    { color: getScoreColor(liveAnalysis.smoothnessScore) },
+                  ]}
+                >
                   {liveAnalysis.smoothnessScore}
                 </Text>
-                <Text style={[styles.liveScoreLabel, { color: getScoreColor(liveAnalysis.smoothnessScore) }]}>
+                <Text
+                  style={[
+                    styles.liveScoreLabel,
+                    { color: getScoreColor(liveAnalysis.smoothnessScore) },
+                  ]}
+                >
                   {getScoreLabel(liveAnalysis.smoothnessScore)}
                 </Text>
                 <Text style={styles.liveScoreSubtitle}>
@@ -414,10 +447,20 @@ export default function App() {
               </View>
             ) : !isActive && overallAnalysis ? (
               <View style={styles.liveScoreContainer}>
-                <Text style={[styles.liveScoreValue, { color: getScoreColor(overallAnalysis.smoothnessScore) }]}>
+                <Text
+                  style={[
+                    styles.liveScoreValue,
+                    { color: getScoreColor(overallAnalysis.smoothnessScore) },
+                  ]}
+                >
                   {overallAnalysis.smoothnessScore}
                 </Text>
-                <Text style={[styles.liveScoreLabel, { color: getScoreColor(overallAnalysis.smoothnessScore) }]}>
+                <Text
+                  style={[
+                    styles.liveScoreLabel,
+                    { color: getScoreColor(overallAnalysis.smoothnessScore) },
+                  ]}
+                >
                   {getScoreLabel(overallAnalysis.smoothnessScore)}
                 </Text>
                 <Text style={styles.liveScoreSubtitle}>
@@ -428,7 +471,9 @@ export default function App() {
               <View style={styles.liveScoreContainer}>
                 <Text style={styles.liveScorePlaceholder}>—</Text>
                 <Text style={styles.liveScoreSubtitle}>
-                  {isActive ? 'Collecting data…' : 'Start recording to see your ride score'}
+                  {isActive
+                    ? "Collecting data…"
+                    : "Start recording to see your ride score"}
                 </Text>
               </View>
             )}
@@ -444,7 +489,7 @@ export default function App() {
                 <Switch
                   value={locationEnabled}
                   onValueChange={setLocationEnabled}
-                  trackColor={{ false: '#e0e0e0', true: '#34c759' }}
+                  trackColor={{ false: "#e0e0e0", true: "#34c759" }}
                   thumbColor="#fff"
                 />
               </View>
@@ -456,20 +501,30 @@ export default function App() {
               </View>
             )}
 
-            <View style={[styles.buttonRow, isNarrow && styles.buttonRowVertical]}>
+            <View
+              style={[styles.buttonRow, isNarrow && styles.buttonRowVertical]}
+            >
               <TouchableOpacity
-                style={[styles.button, styles.buttonFlex, isActive && styles.activeButton]}
+                style={[
+                  styles.button,
+                  styles.buttonFlex,
+                  isActive && styles.activeButton,
+                ]}
                 onPress={toggle}
                 activeOpacity={0.7}
               >
                 <Text style={styles.buttonText}>
-                  {isActive ? 'Stop Recording' : 'Start Recording'}
+                  {isActive ? "Stop Recording" : "Start Recording"}
                 </Text>
               </TouchableOpacity>
 
               {history.length > 0 && (
                 <TouchableOpacity
-                  style={[styles.button, styles.buttonFlex, styles.restartButton]}
+                  style={[
+                    styles.button,
+                    styles.buttonFlex,
+                    styles.restartButton,
+                  ]}
                   onPress={restart}
                   activeOpacity={0.7}
                 >
@@ -479,7 +534,11 @@ export default function App() {
 
               {history.length > 0 && (
                 <TouchableOpacity
-                  style={[styles.button, styles.buttonFlex, styles.exportButton]}
+                  style={[
+                    styles.button,
+                    styles.buttonFlex,
+                    styles.exportButton,
+                  ]}
                   onPress={exportCsv}
                   activeOpacity={0.7}
                 >
@@ -500,7 +559,9 @@ export default function App() {
               activeOpacity={0.7}
             >
               <Text style={styles.cardTitle}>Live View</Text>
-              <Text style={styles.expandArrow}>{liveViewExpanded ? '▲' : '▼'}</Text>
+              <Text style={styles.expandArrow}>
+                {liveViewExpanded ? "▲" : "▼"}
+              </Text>
             </TouchableOpacity>
             {liveViewExpanded && (
               <View style={styles.liveViewContent}>
@@ -521,7 +582,9 @@ export default function App() {
                 activeOpacity={0.7}
               >
                 <Text style={styles.cardTitle}>Activity Graph</Text>
-                <Text style={styles.expandArrow}>{graphExpanded ? '▲' : '▼'}</Text>
+                <Text style={styles.expandArrow}>
+                  {graphExpanded ? "▲" : "▼"}
+                </Text>
               </TouchableOpacity>
               {graphExpanded && <AccelerometerGraph history={history} />}
             </View>
@@ -535,10 +598,13 @@ export default function App() {
 }
 
 function AccelerometerGraph({ history }: { history: DataPoint[] }) {
-  const width = Dimensions.get('window').width > 800 ? 752 : Dimensions.get('window').width - 80;
+  const width =
+    Dimensions.get("window").width > 800
+      ? 752
+      : Dimensions.get("window").width - 80;
   const height = 200;
   const padding = 10;
-  
+
   const { minVal, maxVal } = useMemo(() => {
     let min = Infinity;
     let max = -Infinity;
@@ -552,7 +618,10 @@ function AccelerometerGraph({ history }: { history: DataPoint[] }) {
     }
     if (!isFinite(min)) min = -5;
     if (!isFinite(max)) max = 5;
-    if (min === max) { min -= 1; max += 1; }
+    if (min === max) {
+      min -= 1;
+      max += 1;
+    }
     const margin = (max - min) * 0.1;
     return { minVal: min - margin, maxVal: max + margin };
   }, [history]);
@@ -562,19 +631,34 @@ function AccelerometerGraph({ history }: { history: DataPoint[] }) {
     return height - (normalized * (height - 2 * padding) + padding);
   };
 
-  const xPoints = useMemo(() => 
-    history.map((h, i) => `${(i / (MAX_HISTORY_POINTS - 1)) * width},${scale(h.x)}`).join(' '), 
-    [history, width]
+  const xPoints = useMemo(
+    () =>
+      history
+        .map(
+          (h, i) => `${(i / (MAX_HISTORY_POINTS - 1)) * width},${scale(h.x)}`,
+        )
+        .join(" "),
+    [history, width],
   );
-  
-  const yPoints = useMemo(() => 
-    history.map((h, i) => `${(i / (MAX_HISTORY_POINTS - 1)) * width},${scale(h.y)}`).join(' '), 
-    [history, width]
+
+  const yPoints = useMemo(
+    () =>
+      history
+        .map(
+          (h, i) => `${(i / (MAX_HISTORY_POINTS - 1)) * width},${scale(h.y)}`,
+        )
+        .join(" "),
+    [history, width],
   );
-  
-  const zPoints = useMemo(() => 
-    history.map((h, i) => `${(i / (MAX_HISTORY_POINTS - 1)) * width},${scale(h.z)}`).join(' '), 
-    [history, width]
+
+  const zPoints = useMemo(
+    () =>
+      history
+        .map(
+          (h, i) => `${(i / (MAX_HISTORY_POINTS - 1)) * width},${scale(h.z)}`,
+        )
+        .join(" "),
+    [history, width],
   );
 
   return (
@@ -589,9 +673,24 @@ function AccelerometerGraph({ history }: { history: DataPoint[] }) {
           strokeDasharray="4"
         />
         {/* Data lines */}
-        <Polyline points={xPoints} fill="none" stroke="#ff3b30" strokeWidth="2" />
-        <Polyline points={yPoints} fill="none" stroke="#34c759" strokeWidth="2" />
-        <Polyline points={zPoints} fill="none" stroke="#007aff" strokeWidth="2" />
+        <Polyline
+          points={xPoints}
+          fill="none"
+          stroke="#ff3b30"
+          strokeWidth="2"
+        />
+        <Polyline
+          points={yPoints}
+          fill="none"
+          stroke="#34c759"
+          strokeWidth="2"
+        />
+        <Polyline
+          points={zPoints}
+          fill="none"
+          stroke="#007aff"
+          strokeWidth="2"
+        />
       </Svg>
       <View style={styles.legend}>
         <LegendItem label="X" color="#ff3b30" />
@@ -603,10 +702,14 @@ function AccelerometerGraph({ history }: { history: DataPoint[] }) {
 }
 
 function analyzeRide(history: DataPoint[]) {
-  const magnitudes = history.map((h) => Math.sqrt(h.x ** 2 + h.y ** 2 + h.z ** 2));
+  const magnitudes = history.map((h) =>
+    Math.sqrt(h.x ** 2 + h.y ** 2 + h.z ** 2),
+  );
 
   // RMS acceleration — overall vibration intensity
-  const rms = Math.sqrt(magnitudes.reduce((sum, m) => sum + m * m, 0) / magnitudes.length);
+  const rms = Math.sqrt(
+    magnitudes.reduce((sum, m) => sum + m * m, 0) / magnitudes.length,
+  );
 
   // Peak acceleration
   const peak = Math.max(...magnitudes);
@@ -616,46 +719,54 @@ function analyzeRide(history: DataPoint[]) {
   for (let i = 1; i < magnitudes.length; i++) {
     jerks.push(Math.abs(magnitudes[i] - magnitudes[i - 1]));
   }
-  const jerkRms = jerks.length > 0
-    ? Math.sqrt(jerks.reduce((sum, j) => sum + j * j, 0) / jerks.length)
-    : 0;
+  const jerkRms =
+    jerks.length > 0
+      ? Math.sqrt(jerks.reduce((sum, j) => sum + j * j, 0) / jerks.length)
+      : 0;
 
   // Jolt count: jerk spikes exceeding 2× the mean jerk
-  const meanJerk = jerks.length > 0 ? jerks.reduce((a, b) => a + b, 0) / jerks.length : 0;
+  const meanJerk =
+    jerks.length > 0 ? jerks.reduce((a, b) => a + b, 0) / jerks.length : 0;
   const joltThreshold = Math.max(meanJerk * 2, 0.5);
   const joltCount = jerks.filter((j) => j > joltThreshold).length;
 
   // Vibration ratio: % of samples above a "comfortable" threshold (0.5 m/s²)
   const comfortThreshold = 0.5;
-  const vibrationRatio = magnitudes.filter((m) => m > comfortThreshold).length / magnitudes.length;
+  const vibrationRatio =
+    magnitudes.filter((m) => m > comfortThreshold).length / magnitudes.length;
 
   // Smoothness score (0–100): penalize high RMS, peak, jerk, and jolts
   // Tuned so a perfectly still phone ≈ 100 and a very rough ride ≈ 0
-  const rawScore = 100
-    - rms * 10        // penalize sustained vibration
-    - peak * 3        // penalize worst moment
-    - jerkRms * 8     // penalize abrupt changes
-    - joltCount * 2;  // penalize number of jolts
+  const rawScore =
+    100 -
+    rms * 10 - // penalize sustained vibration
+    peak * 3 - // penalize worst moment
+    jerkRms * 8 - // penalize abrupt changes
+    joltCount * 2; // penalize number of jolts
   const smoothnessScore = Math.max(0, Math.min(100, Math.round(rawScore)));
 
   return { rms, peak, jerkRms, joltCount, vibrationRatio, smoothnessScore };
 }
 
 function getScoreColor(score: number): string {
-  if (score >= 80) return '#34c759';
-  if (score >= 60) return '#ff9500';
-  if (score >= 40) return '#ff6b00';
-  return '#ff3b30';
+  if (score >= 80) return "#34c759";
+  if (score >= 60) return "#ff9500";
+  if (score >= 40) return "#ff6b00";
+  return "#ff3b30";
 }
 
 function getScoreLabel(score: number): string {
-  if (score >= 80) return 'Smooth';
-  if (score >= 60) return 'Moderate';
-  if (score >= 40) return 'Rough';
-  return 'Very Rough';
+  if (score >= 80) return "Smooth";
+  if (score >= 60) return "Moderate";
+  if (score >= 40) return "Rough";
+  return "Very Rough";
 }
 
-function RideAnalysis({ analysis }: { analysis: NonNullable<ReturnType<typeof scoreFromStats>> }) {
+function RideAnalysis({
+  analysis,
+}: {
+  analysis: NonNullable<ReturnType<typeof scoreFromStats>>;
+}) {
   return (
     <View style={styles.analysisContainer}>
       <Text style={styles.graphTitle}>Overall Ride Analysis</Text>
@@ -691,7 +802,15 @@ function RideAnalysis({ analysis }: { analysis: NonNullable<ReturnType<typeof sc
   );
 }
 
-function MetricRow({ label, value, description }: { label: string; value: string; description: string }) {
+function MetricRow({
+  label,
+  value,
+  description,
+}: {
+  label: string;
+  value: string;
+  description: string;
+}) {
   return (
     <View style={styles.metricRow}>
       <View style={styles.metricInfo}>
@@ -727,7 +846,12 @@ function AxisRow({
     <View style={styles.axisRow}>
       <Text style={[styles.axisLabel, { color }]}>{label}</Text>
       <View style={styles.barBackground}>
-        <View style={[styles.bar, { width: `${barWidth}%`, backgroundColor: color }]} />
+        <View
+          style={[
+            styles.bar,
+            { width: `${barWidth}%`, backgroundColor: color },
+          ]}
+        />
       </View>
       <Text style={styles.axisValue}>{value.toFixed(3)}</Text>
     </View>
@@ -737,7 +861,7 @@ function AxisRow({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
   },
   scrollContent: {
     flexGrow: 1,
@@ -745,31 +869,31 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 24,
-    maxWidth: Platform.OS === 'web' ? 800 : undefined,
-    alignSelf: 'center',
-    width: '100%',
+    maxWidth: Platform.OS === "web" ? 800 : undefined,
+    alignSelf: "center",
+    width: "100%",
   },
   header: {
     marginTop: 40,
     marginBottom: 32,
-    alignItems: Platform.OS === 'web' ? 'flex-start' : 'center',
+    alignItems: Platform.OS === "web" ? "flex-start" : "center",
   },
   title: {
     fontSize: 42,
-    fontWeight: '800',
-    color: '#1a1a1a',
+    fontWeight: "800",
+    color: "#1a1a1a",
     letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 18,
-    color: '#666',
+    color: "#666",
     marginTop: 8,
   },
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 20,
     padding: 24,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
@@ -778,125 +902,125 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 22,
-    fontWeight: '700',
-    color: '#1a1a1a',
+    fontWeight: "700",
+    color: "#1a1a1a",
     marginBottom: 8,
   },
   axisContainer: {
     marginBottom: 20,
   },
   axisRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 12,
   },
   axisLabel: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: "800",
     width: 28,
   },
   barBackground: {
     flex: 1,
     height: 24,
-    backgroundColor: '#f0f4f8',
+    backgroundColor: "#f0f4f8",
     borderRadius: 12,
     marginHorizontal: 12,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   bar: {
-    height: '100%',
+    height: "100%",
     borderRadius: 12,
     opacity: 0.7,
   },
   axisValue: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#334e68',
+    fontWeight: "600",
+    color: "#334e68",
     width: 70,
-    textAlign: 'right',
+    textAlign: "right",
   },
   liveScoreContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingVertical: 16,
     marginBottom: 16,
   },
   liveScoreValue: {
     fontSize: 72,
-    fontWeight: '800',
+    fontWeight: "800",
     lineHeight: 80,
   },
   liveScoreLabel: {
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: "700",
     marginTop: 4,
   },
   liveScoreSubtitle: {
     fontSize: 14,
-    color: '#999',
+    color: "#999",
     marginTop: 8,
   },
   liveScorePlaceholder: {
     fontSize: 72,
-    fontWeight: '800',
-    color: '#ddd',
+    fontWeight: "800",
+    color: "#ddd",
     lineHeight: 80,
   },
   liveViewContent: {
     marginTop: 16,
   },
   buttonRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
     marginBottom: 24,
   },
   buttonRowVertical: {
-    flexDirection: 'column',
+    flexDirection: "column",
   },
   button: {
-    backgroundColor: '#007aff',
+    backgroundColor: "#007aff",
     paddingVertical: 16,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
   },
   buttonFlex: {
     flex: 1,
   },
   activeButton: {
-    backgroundColor: '#ff3b30',
+    backgroundColor: "#ff3b30",
   },
   restartButton: {
-    backgroundColor: '#ff9500',
+    backgroundColor: "#ff9500",
   },
   exportButton: {
-    backgroundColor: '#34c759',
+    backgroundColor: "#34c759",
   },
   buttonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   graphTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#1a1a1a',
+    fontWeight: "700",
+    color: "#1a1a1a",
     marginBottom: 16,
   },
   graphWrapper: {
-    backgroundColor: '#fcfcfc',
+    backgroundColor: "#fcfcfc",
     borderRadius: 12,
     padding: 8,
     borderWidth: 1,
-    borderColor: '#eee',
-    alignItems: 'center',
+    borderColor: "#eee",
+    alignItems: "center",
   },
   legend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
     marginTop: 12,
   },
   legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginHorizontal: 12,
   },
   legendColor: {
@@ -907,13 +1031,13 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
+    fontWeight: "600",
+    color: "#666",
   },
   errorPage: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 32,
   },
   errorPageEmoji: {
@@ -922,32 +1046,32 @@ const styles = StyleSheet.create({
   },
   errorPageTitle: {
     fontSize: 26,
-    fontWeight: '800',
-    color: '#1a1a1a',
+    fontWeight: "800",
+    color: "#1a1a1a",
     marginBottom: 12,
-    textAlign: 'center',
+    textAlign: "center",
   },
   errorPageText: {
     fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
+    color: "#666",
+    textAlign: "center",
     lineHeight: 24,
     maxWidth: 400,
   },
   expandableHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   expandArrow: {
     fontSize: 16,
-    color: '#999',
+    color: "#999",
   },
   toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f8f9fa',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#f8f9fa",
     borderRadius: 12,
     padding: 14,
     marginBottom: 16,
@@ -958,66 +1082,66 @@ const styles = StyleSheet.create({
   },
   toggleLabel: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: "600",
+    color: "#1a1a1a",
   },
   toggleDescription: {
     fontSize: 12,
-    color: '#999',
+    color: "#999",
     marginTop: 2,
   },
   errorBanner: {
-    backgroundColor: '#fff3f3',
+    backgroundColor: "#fff3f3",
     borderRadius: 10,
     padding: 12,
     marginBottom: 16,
   },
   errorText: {
     fontSize: 14,
-    color: '#d32f2f',
-    textAlign: 'center',
+    color: "#d32f2f",
+    textAlign: "center",
   },
   analysisContainer: {
     marginTop: 24,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: "#eee",
     paddingTop: 24,
   },
   scoreCard: {
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
+    alignItems: "center",
+    backgroundColor: "#f8f9fa",
     borderRadius: 16,
     paddingVertical: 24,
     marginBottom: 20,
   },
   scoreValue: {
     fontSize: 64,
-    fontWeight: '800',
+    fontWeight: "800",
     lineHeight: 72,
   },
   scoreLabel: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: "700",
     marginTop: 4,
   },
   scoreSubtitle: {
     fontSize: 13,
-    color: '#999',
+    color: "#999",
     marginTop: 6,
   },
   metricsGrid: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     borderRadius: 12,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   metricRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: "#eee",
   },
   metricInfo: {
     flex: 1,
@@ -1025,17 +1149,17 @@ const styles = StyleSheet.create({
   },
   metricLabel: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    fontWeight: "600",
+    color: "#1a1a1a",
   },
   metricDescription: {
     fontSize: 12,
-    color: '#999',
+    color: "#999",
     marginTop: 2,
   },
   metricValue: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#334e68',
+    fontWeight: "700",
+    color: "#334e68",
   },
 });
