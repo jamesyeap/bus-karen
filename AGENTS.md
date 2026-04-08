@@ -49,3 +49,4 @@ When you open a new browser, the output will provide the `surface_id` (e.g., `su
 2. **Safe Areas:** Always use `SafeAreaView` (from `react-native`) for proper layout on modern mobile devices.
 3. **Icons:** Prefer `@expo/vector-icons` if adding icons.
 4. **Testing:** Before submitting changes, ensure they do not break the web build by running `npx expo export --platform web`. ALWAYS TEST CHANGES BY LOADING THE PAGE IN A WEB BROWSER AND INSPECTING IT with cmux's browser. Use `cmux --help` for help.
+5. **Commit & Push:** After testing is complete and changes are verified, always commit and push the changes.

@@ -15,6 +15,7 @@ import {
 import Svg, { Polyline } from 'react-native-svg';
 
 const MAX_HISTORY_POINTS = 100;
+const RECENT_WINDOW_MS = 5000;
 
 type DataPoint = {
   x: number;
@@ -24,6 +25,90 @@ type DataPoint = {
   lat: number | null;
   lng: number | null;
 };
+
+type RunningStats = {
+  sumMagSq: number;
+  count: number;
+  peak: number;
+  sumJerkSq: number;
+  jerkCount: number;
+  joltCount: number;
+  jerkSum: number;
+  aboveComfortCount: number;
+  lastMagnitude: number | null;
+};
+
+function createRunningStats(): RunningStats {
+  return {
+    sumMagSq: 0,
+    count: 0,
+    peak: 0,
+    sumJerkSq: 0,
+    jerkCount: 0,
+    joltCount: 0,
+    jerkSum: 0,
+    aboveComfortCount: 0,
+    lastMagnitude: null,
+  };
+}
+
+function pushToRunningStats(stats: RunningStats, point: DataPoint): RunningStats {
+  const mag = Math.sqrt(point.x ** 2 + point.y ** 2 + point.z ** 2);
+  const comfortThreshold = 0.5;
+
+  const next: RunningStats = {
+    sumMagSq: stats.sumMagSq + mag * mag,
+    count: stats.count + 1,
+    peak: Math.max(stats.peak, mag),
+    sumJerkSq: stats.sumJerkSq,
+    jerkCount: stats.jerkCount,
+    joltCount: stats.joltCount,
+    jerkSum: stats.jerkSum,
+    aboveComfortCount: stats.aboveComfortCount + (mag > comfortThreshold ? 1 : 0),
+    lastMagnitude: mag,
+  };
+
+  if (stats.lastMagnitude !== null) {
+    const jerk = Math.abs(mag - stats.lastMagnitude);
+    next.sumJerkSq = stats.sumJerkSq + jerk * jerk;
+    next.jerkCount = stats.jerkCount + 1;
+    next.jerkSum = stats.jerkSum + jerk;
+
+    const meanJerk = next.jerkSum / next.jerkCount;
+    const joltThreshold = Math.max(meanJerk * 2, 0.5);
+    if (jerk > joltThreshold) {
+      next.joltCount = stats.joltCount + 1;
+    }
+  }
+
+  return next;
+}
+
+function scoreFromStats(stats: RunningStats) {
+  if (stats.count < 2) return null;
+
+  const rms = Math.sqrt(stats.sumMagSq / stats.count);
+  const jerkRms = stats.jerkCount > 0
+    ? Math.sqrt(stats.sumJerkSq / stats.jerkCount)
+    : 0;
+  const vibrationRatio = stats.aboveComfortCount / stats.count;
+
+  const rawScore = 100
+    - rms * 10
+    - stats.peak * 3
+    - jerkRms * 8
+    - stats.joltCount * 2;
+  const smoothnessScore = Math.max(0, Math.min(100, Math.round(rawScore)));
+
+  return {
+    rms,
+    peak: stats.peak,
+    jerkRms,
+    joltCount: stats.joltCount,
+    vibrationRatio,
+    smoothnessScore,
+  };
+}
 
 export default function App() {
   const [data, setData] = useState({ x: 0, y: 0, z: 0 });
@@ -38,6 +123,10 @@ export default function App() {
   const [locationAvailable, setLocationAvailable] = useState(false);
   const locationRef = useRef<{ lat: number; lng: number } | null>(null);
   const watchIdRef = useRef<number | null>(null);
+  const [overallStats, setOverallStats] = useState<RunningStats>(createRunningStats());
+  const overallStatsRef = useRef<RunningStats>(createRunningStats());
+  const noDataTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const receivedMotionDataRef = useRef(false);
 
   useEffect(() => {
     if (Platform.OS === 'web') {
@@ -85,9 +174,18 @@ export default function App() {
   useEffect(() => {
     if (!isActive || Platform.OS !== 'web') return;
 
+    receivedMotionDataRef.current = false;
+
+    noDataTimerRef.current = setTimeout(() => {
+      if (!receivedMotionDataRef.current) {
+        setAvailable(false);
+      }
+    }, 2000);
+
     const handleMotion = (event: DeviceMotionEvent) => {
       const acc = event.acceleration;
-      if (acc) {
+      if (acc && (acc.x !== null || acc.y !== null || acc.z !== null)) {
+        receivedMotionDataRef.current = true;
         const x = acc.x || 0;
         const y = acc.y || 0;
         const z = acc.z || 0;
@@ -105,6 +203,8 @@ export default function App() {
           const next = [...prev, point];
           return next.slice(-MAX_HISTORY_POINTS);
         });
+        overallStatsRef.current = pushToRunningStats(overallStatsRef.current, point);
+        setOverallStats(overallStatsRef.current);
       }
     };
 
@@ -118,6 +218,10 @@ export default function App() {
 
     return () => {
       window.removeEventListener('devicemotion', handleMotion, true);
+      if (noDataTimerRef.current) {
+        clearTimeout(noDataTimerRef.current);
+        noDataTimerRef.current = null;
+      }
     };
   }, [isActive]);
 
@@ -176,6 +280,8 @@ export default function App() {
             setHistory([]);
             setData({ x: 0, y: 0, z: 0 });
             setGraphExpanded(false);
+            overallStatsRef.current = createRunningStats();
+            setOverallStats(createRunningStats());
             setIsActive(true);
           },
         },
@@ -183,9 +289,18 @@ export default function App() {
     );
   };
 
-  const liveAnalysis = useMemo(
-    () => (history.length >= 2 ? analyzeRide(history) : null),
-    [history],
+  const liveAnalysis = useMemo(() => {
+    if (!isActive || history.length < 2) return null;
+    const now = Date.now();
+    const recentPoints = history.filter(
+      (h) => now - new Date(h.timestamp).getTime() <= RECENT_WINDOW_MS,
+    );
+    return recentPoints.length >= 2 ? analyzeRide(recentPoints) : analyzeRide(history);
+  }, [history, isActive]);
+
+  const overallAnalysis = useMemo(
+    () => scoreFromStats(overallStats),
+    [overallStats],
   );
 
   if (available === false) {
@@ -196,7 +311,7 @@ export default function App() {
           <Text style={styles.errorPageTitle}>Accelerometer Not Available</Text>
           <Text style={styles.errorPageText}>
             {Platform.OS === 'web'
-              ? 'This browser does not support the Device Motion API. Please try opening this page in a mobile browser on a phone or tablet.'
+              ? 'No accelerometer was detected on this device. This app requires a motion sensor to measure ride quality. Please open this page on a phone or tablet with an accelerometer.'
               : 'Native sensor support is currently disabled. Open this app on the Web to use the native Web API.'}
           </Text>
           <StatusBar style="auto" />
@@ -215,9 +330,11 @@ export default function App() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Ride Score</Text>
+            <Text style={styles.cardTitle}>
+              {isActive ? 'Current Ride Score' : 'Overall Ride Score'}
+            </Text>
 
-            {liveAnalysis ? (
+            {isActive && liveAnalysis ? (
               <View style={styles.liveScoreContainer}>
                 <Text style={[styles.liveScoreValue, { color: getScoreColor(liveAnalysis.smoothnessScore) }]}>
                   {liveAnalysis.smoothnessScore}
@@ -226,7 +343,19 @@ export default function App() {
                   {getScoreLabel(liveAnalysis.smoothnessScore)}
                 </Text>
                 <Text style={styles.liveScoreSubtitle}>
-                  {isActive ? 'Recording…' : 'Recording stopped'}
+                  Based on the last {RECENT_WINDOW_MS / 1000}s
+                </Text>
+              </View>
+            ) : !isActive && overallAnalysis ? (
+              <View style={styles.liveScoreContainer}>
+                <Text style={[styles.liveScoreValue, { color: getScoreColor(overallAnalysis.smoothnessScore) }]}>
+                  {overallAnalysis.smoothnessScore}
+                </Text>
+                <Text style={[styles.liveScoreLabel, { color: getScoreColor(overallAnalysis.smoothnessScore) }]}>
+                  {getScoreLabel(overallAnalysis.smoothnessScore)}
+                </Text>
+                <Text style={styles.liveScoreSubtitle}>
+                  Overall score across {overallStats.count} samples
                 </Text>
               </View>
             ) : (
@@ -293,8 +422,8 @@ export default function App() {
               )}
             </View>
 
-            {history.length >= 2 && !isActive && (
-              <RideAnalysis history={history} />
+            {!isActive && overallAnalysis && (
+              <RideAnalysis analysis={overallAnalysis} sampleCount={overallStats.count} />
             )}
           </View>
 
@@ -460,13 +589,12 @@ function getScoreLabel(score: number): string {
   return 'Very Rough';
 }
 
-function RideAnalysis({ history }: { history: DataPoint[] }) {
-  const analysis = useMemo(() => analyzeRide(history), [history]);
+function RideAnalysis({ analysis, sampleCount }: { analysis: NonNullable<ReturnType<typeof scoreFromStats>>; sampleCount: number }) {
   const scoreColor = getScoreColor(analysis.smoothnessScore);
 
   return (
     <View style={styles.analysisContainer}>
-      <Text style={styles.graphTitle}>Ride Analysis</Text>
+      <Text style={styles.graphTitle}>Overall Ride Analysis</Text>
 
       <View style={styles.scoreCard}>
         <Text style={[styles.scoreValue, { color: scoreColor }]}>
@@ -475,7 +603,7 @@ function RideAnalysis({ history }: { history: DataPoint[] }) {
         <Text style={[styles.scoreLabel, { color: scoreColor }]}>
           {getScoreLabel(analysis.smoothnessScore)}
         </Text>
-        <Text style={styles.scoreSubtitle}>Smoothness Score (0–100)</Text>
+        <Text style={styles.scoreSubtitle}>Overall Smoothness Score (0–100) · {sampleCount} samples</Text>
       </View>
 
       <View style={styles.metricsGrid}>
