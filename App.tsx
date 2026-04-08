@@ -175,6 +175,7 @@ export default function App() {
   const noDataTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const receivedMotionDataRef = useRef(false);
   const highPassRef = useRef<HighPassState>(createHighPassState());
+  const generationRef = useRef(0);
 
   useEffect(() => {
     if (Platform.OS === 'web') {
@@ -223,6 +224,7 @@ export default function App() {
     if (!isActive || Platform.OS !== 'web') return;
 
     receivedMotionDataRef.current = false;
+    const gen = ++generationRef.current;
 
     noDataTimerRef.current = setTimeout(() => {
       if (!receivedMotionDataRef.current) {
@@ -231,6 +233,7 @@ export default function App() {
     }, 2000);
 
     const handleMotion = (event: DeviceMotionEvent) => {
+      if (gen !== generationRef.current) return;
       const acc = event.acceleration;
       if (acc && (acc.x !== null || acc.y !== null || acc.z !== null)) {
         receivedMotionDataRef.current = true;
@@ -337,6 +340,7 @@ export default function App() {
           text: 'Clear & Restart',
           style: 'destructive',
           onPress: () => {
+            generationRef.current++;
             setIsActive(false);
             setHistory([]);
             setData({ x: 0, y: 0, z: 0 });
@@ -485,7 +489,7 @@ export default function App() {
             </View>
 
             {!isActive && overallAnalysis && (
-              <RideAnalysis analysis={overallAnalysis} sampleCount={overallStats.count} />
+              <RideAnalysis analysis={overallAnalysis} />
             )}
           </View>
 
@@ -651,22 +655,10 @@ function getScoreLabel(score: number): string {
   return 'Very Rough';
 }
 
-function RideAnalysis({ analysis, sampleCount }: { analysis: NonNullable<ReturnType<typeof scoreFromStats>>; sampleCount: number }) {
-  const scoreColor = getScoreColor(analysis.smoothnessScore);
-
+function RideAnalysis({ analysis }: { analysis: NonNullable<ReturnType<typeof scoreFromStats>> }) {
   return (
     <View style={styles.analysisContainer}>
       <Text style={styles.graphTitle}>Overall Ride Analysis</Text>
-
-      <View style={styles.scoreCard}>
-        <Text style={[styles.scoreValue, { color: scoreColor }]}>
-          {analysis.smoothnessScore}
-        </Text>
-        <Text style={[styles.scoreLabel, { color: scoreColor }]}>
-          {getScoreLabel(analysis.smoothnessScore)}
-        </Text>
-        <Text style={styles.scoreSubtitle}>Overall Smoothness Score (0–100) · {sampleCount} samples</Text>
-      </View>
 
       <View style={styles.metricsGrid}>
         <MetricRow
